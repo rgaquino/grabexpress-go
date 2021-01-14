@@ -3,17 +3,14 @@ package grabexpress
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
-	"github.com/twinj/uuid"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/clientcredentials"
 )
 
 // Client may be used to make requests to the GrabExpress APIs
@@ -22,6 +19,7 @@ type Client struct {
 	apiKey     string
 	secret     string
 	baseURL    string
+	oauth      clientcredentials.Config
 }
 
 // ClientOption is the type of constructor options for NewClient(...).
@@ -41,6 +39,12 @@ func NewClient(options ...ClientOption) (*Client, error) {
 	}
 	if strings.TrimSpace(c.baseURL) == "" {
 		return nil, errBaseURLMissing
+	}
+	c.oauth = clientcredentials.Config{
+		ClientID:     c.apiKey,
+		ClientSecret: c.secret,
+		TokenURL:     "https://api.stg-myteksi.com/grabid/v1/oauth2/token",
+		Scopes:       []string{"grab_express.partner_deliveries"},
 	}
 	return c, nil
 }
@@ -81,7 +85,7 @@ func WithBaseURL(baseURL string) ClientOption {
 }
 
 func (c *Client) get(ctx context.Context, path string, apiReq interface{}, apiResp interface{}) error {
-	req, err := c.createRequest(http.MethodGet, path, apiReq)
+	req, err := c.createRequest(ctx, http.MethodGet, path, apiReq)
 	if err != nil {
 		return err
 	}
@@ -89,7 +93,7 @@ func (c *Client) get(ctx context.Context, path string, apiReq interface{}, apiRe
 }
 
 func (c *Client) post(ctx context.Context, path string, apiReq interface{}, apiResp interface{}) error {
-	req, err := c.createRequest(http.MethodPost, path, apiReq)
+	req, err := c.createRequest(ctx, http.MethodPost, path, apiReq)
 	if err != nil {
 		return err
 	}
@@ -98,7 +102,7 @@ func (c *Client) post(ctx context.Context, path string, apiReq interface{}, apiR
 }
 
 func (c *Client) put(ctx context.Context, path string, apiReq interface{}, apiResp interface{}) error {
-	req, err := c.createRequest(http.MethodPut, path, apiReq)
+	req, err := c.createRequest(ctx, http.MethodPut, path, apiReq)
 	if err != nil {
 		return err
 	}
@@ -107,15 +111,15 @@ func (c *Client) put(ctx context.Context, path string, apiReq interface{}, apiRe
 }
 
 func (c *Client) delete(ctx context.Context, path string, apiReq interface{}, apiResp interface{}) error {
-	req, err := c.createRequest(http.MethodDelete, path, apiReq)
+	req, err := c.createRequest(ctx, http.MethodDelete, path, apiReq)
 	if err != nil {
 		return err
 	}
 	return c.do(ctx, req, apiResp)
 }
 
-func (c *Client) createRequest(method, path string, apiReq interface{}) (*http.Request, error) {
-	body, bodyBytes, err := marshalRequest(apiReq)
+func (c *Client) createRequest(ctx context.Context, method, path string, apiReq interface{}) (*http.Request, error) {
+	body, err := marshalRequest(apiReq)
 	if err != nil {
 		return nil, err
 	}
@@ -123,9 +127,11 @@ func (c *Client) createRequest(method, path string, apiReq interface{}) (*http.R
 	if err != nil {
 		return nil, err
 	}
-	auth := c.generateAuth(method, path, bodyBytes)
-	req.Header.Set("Authorization", auth)
-	req.Header.Set("X-Request-ID", uuid.NewV4().String())
+	token, err := c.generateAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token.AccessToken))
 	return req, nil
 }
 
@@ -142,24 +148,23 @@ func (c *Client) do(ctx context.Context, req *http.Request, apiResp interface{})
 	return decodeResponse(resp, apiResp)
 }
 
-func (c *Client) generateAuth(method, path string, body []byte) string {
-	now := time.Now().UnixNano() / int64(time.Millisecond)
-	rawSignature := fmt.Sprintf("%d\r\n%s\r\n%s\r\n\r\n%s", now, method, path, string(body))
-	mac := hmac.New(sha256.New, []byte(c.secret))
-	mac.Write([]byte(rawSignature))
-	signature := hex.EncodeToString(mac.Sum(nil))
-	return fmt.Sprintf("hmac %s:%d:%s", c.apiKey, now, signature)
+func (c *Client) generateAuth(ctx context.Context) (*oauth2.Token, error) {
+	token, err := c.oauth.Token(ctx)
+	if err != nil {
+		return nil, errUnknownError // TODO: change error
+	}
+	return token, nil
 }
 
-func marshalRequest(apiReq interface{}) (io.Reader, []byte, error) {
+func marshalRequest(apiReq interface{}) (io.Reader, error) {
 	if apiReq == nil {
-		return nil, nil, nil
+		return nil, nil
 	}
 	body, err := json.Marshal(apiReq)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return bytes.NewBuffer(body), body, nil
+	return bytes.NewBuffer(body), nil
 }
 
 func decodeResponse(resp *http.Response, apiResp interface{}) error {
