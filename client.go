@@ -106,6 +106,14 @@ func (c *Client) put(ctx context.Context, path string, apiReq interface{}, apiRe
 	return c.do(ctx, req, apiResp)
 }
 
+func (c *Client) delete(ctx context.Context, path string, apiReq interface{}, apiResp interface{}) error {
+	req, err := c.createRequest(http.MethodDelete, path, apiReq)
+	if err != nil {
+		return err
+	}
+	return c.do(ctx, req, apiResp)
+}
+
 func (c *Client) createRequest(method, path string, apiReq interface{}) (*http.Request, error) {
 	body, bodyBytes, err := marshalRequest(apiReq)
 	if err != nil {
