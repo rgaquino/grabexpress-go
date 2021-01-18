@@ -19,7 +19,7 @@ func (c *Client) CreateQuotes(ctx context.Context, req *CreateQuotesRequest) (*C
 
 // CreateDelivery ...
 func (c *Client) CreateDelivery(ctx context.Context, req *CreateDeliveryRequest) (*CreateDeliveryResponse, error) {
-	path := "v1/deliveries"
+	path := "/v1/deliveries"
 	resp := &CreateDeliveryResponse{}
 	if err := c.post(ctx, path, req, resp); err != nil {
 		return nil, err

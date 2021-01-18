@@ -3,8 +3,10 @@ package grabexpress
 import "errors"
 
 var (
-	errCredentialsMissing = errors.New("API Key credentials missing")
-	errBaseURLMissing     = errors.New("base URL missing")
+	errCredentialsMissing  = errors.New("API Key credentials missing")
+	errAuthenticationError = errors.New("authentication error")
+	errBaseURLMissing      = errors.New("base URL missing")
+	errTokenURLMissing     = errors.New("token URL missing")
 )
 
 var (

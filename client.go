@@ -19,6 +19,7 @@ type Client struct {
 	apiKey     string
 	secret     string
 	baseURL    string
+	tokenURL   string
 	oauth      clientcredentials.Config
 }
 
@@ -40,10 +41,13 @@ func NewClient(options ...ClientOption) (*Client, error) {
 	if strings.TrimSpace(c.baseURL) == "" {
 		return nil, errBaseURLMissing
 	}
+	if strings.TrimSpace(c.baseURL) == "" {
+		return nil, errTokenURLMissing
+	}
 	c.oauth = clientcredentials.Config{
 		ClientID:     c.apiKey,
 		ClientSecret: c.secret,
-		TokenURL:     "https://api.stg-myteksi.com/grabid/v1/oauth2/token",
+		TokenURL:     c.tokenURL,
 		Scopes:       []string{"grab_express.partner_deliveries"},
 	}
 	return c, nil
@@ -80,6 +84,14 @@ func WithSecret(secret string) ClientOption {
 func WithBaseURL(baseURL string) ClientOption {
 	return func(c *Client) error {
 		c.baseURL = baseURL
+		return nil
+	}
+}
+
+// WithTokenURL configures a GrabExpress API client with an auth token url
+func WithTokenURL(tokenURL string) ClientOption {
+	return func(c *Client) error {
+		c.tokenURL = tokenURL
 		return nil
 	}
 }
@@ -151,7 +163,7 @@ func (c *Client) do(ctx context.Context, req *http.Request, apiResp interface{})
 func (c *Client) generateAuth(ctx context.Context) (*oauth2.Token, error) {
 	token, err := c.oauth.Token(ctx)
 	if err != nil {
-		return nil, errUnknownError // TODO: change error
+		return nil, errAuthenticationError
 	}
 	return token, nil
 }
