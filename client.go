@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"strings"
 
@@ -23,6 +24,11 @@ type Client struct {
 	oauth      clientcredentials.Config
 }
 
+// DTO ...
+type DTO interface {
+	SetRequestID(id string)
+}
+
 // ClientOption is the type of constructor options for NewClient(...).
 type ClientOption func(*Client) error
 
@@ -36,13 +42,13 @@ func NewClient(options ...ClientOption) (*Client, error) {
 		}
 	}
 	if strings.TrimSpace(c.apiKey) == "" || strings.TrimSpace(c.secret) == "" {
-		return nil, errCredentialsMissing
+		return nil, ErrCredentialsMissing
 	}
 	if strings.TrimSpace(c.baseURL) == "" {
-		return nil, errBaseURLMissing
+		return nil, ErrBaseURLMissing
 	}
 	if strings.TrimSpace(c.baseURL) == "" {
-		return nil, errTokenURLMissing
+		return nil, ErrTokenURLMissing
 	}
 	c.oauth = clientcredentials.Config{
 		ClientID:     c.apiKey,
@@ -96,36 +102,36 @@ func WithTokenURL(tokenURL string) ClientOption {
 	}
 }
 
-func (c *Client) get(ctx context.Context, path string, apiReq interface{}, apiResp interface{}) error {
+func (c *Client) get(ctx context.Context, path string, apiReq interface{}, apiResp DTO) error {
 	req, err := c.createRequest(ctx, http.MethodGet, path, apiReq)
 	if err != nil {
-		return err
+		return wrapError(err)
 	}
 	return c.do(ctx, req, apiResp)
 }
 
-func (c *Client) post(ctx context.Context, path string, apiReq interface{}, apiResp interface{}) error {
+func (c *Client) post(ctx context.Context, path string, apiReq interface{}, apiResp DTO) error {
 	req, err := c.createRequest(ctx, http.MethodPost, path, apiReq)
 	if err != nil {
-		return err
+		return wrapError(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	return c.do(ctx, req, apiResp)
 }
 
-func (c *Client) put(ctx context.Context, path string, apiReq interface{}, apiResp interface{}) error {
+func (c *Client) put(ctx context.Context, path string, apiReq interface{}, apiResp DTO) error {
 	req, err := c.createRequest(ctx, http.MethodPut, path, apiReq)
 	if err != nil {
-		return err
+		return wrapError(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	return c.do(ctx, req, apiResp)
 }
 
-func (c *Client) delete(ctx context.Context, path string, apiReq interface{}, apiResp interface{}) error {
+func (c *Client) delete(ctx context.Context, path string, apiReq interface{}, apiResp DTO) error {
 	req, err := c.createRequest(ctx, http.MethodDelete, path, apiReq)
 	if err != nil {
-		return err
+		return wrapError(err)
 	}
 	return c.do(ctx, req, apiResp)
 }
@@ -147,14 +153,14 @@ func (c *Client) createRequest(ctx context.Context, method, path string, apiReq 
 	return req, nil
 }
 
-func (c *Client) do(ctx context.Context, req *http.Request, apiResp interface{}) error {
+func (c *Client) do(ctx context.Context, req *http.Request, apiResp DTO) error {
 	client := c.httpClient
 	if client == nil {
 		client = http.DefaultClient
 	}
 	resp, err := client.Do(req.WithContext(ctx))
 	if err != nil {
-		return err
+		return wrapError(err)
 	}
 	defer resp.Body.Close()
 	return decodeResponse(resp, apiResp)
@@ -163,7 +169,7 @@ func (c *Client) do(ctx context.Context, req *http.Request, apiResp interface{})
 func (c *Client) generateAuth(ctx context.Context) (*oauth2.Token, error) {
 	token, err := c.oauth.Token(ctx)
 	if err != nil {
-		return nil, errAuthenticationError
+		return nil, ErrAuthenticationError
 	}
 	return token, nil
 }
@@ -179,22 +185,31 @@ func marshalRequest(apiReq interface{}) (io.Reader, error) {
 	return bytes.NewBuffer(body), nil
 }
 
-func decodeResponse(resp *http.Response, apiResp interface{}) error {
-	if resp.StatusCode == 429 {
-		return errTooManyRequests
-	} else if resp.StatusCode == 401 {
-		return errUnauthorized
-	} else if resp.StatusCode == 402 || resp.StatusCode == 409 {
-		errResp := &ErrorResponse{}
-		if err := json.NewDecoder(resp.Body).Decode(errResp); err != nil {
-			return err
+func decodeResponse(resp *http.Response, apiResp DTO) error {
+	requestID := resp.Header.Get("X-Grabkit-Grab-Requestid")
+	apiResp.SetRequestID(requestID)
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		if err := json.NewDecoder(resp.Body).Decode(apiResp); err != nil {
+			return wrapError(err)
 		}
-		return wrapAPIError(errResp)
-	} else if resp.StatusCode >= 400 {
-		return errUnknownError
-	}
-	if apiResp == nil {
 		return nil
+	case http.StatusNoContent:
+		return nil
+	default:
+		var msg string
+		if resp.ContentLength != 0 {
+			bb, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				return wrapError(err)
+			}
+			msg = string(bb)
+		}
+		return &Error{
+			Status:    resp.StatusCode,
+			Message:   msg,
+			RequestID: requestID,
+		}
 	}
-	return json.NewDecoder(resp.Body).Decode(apiResp)
 }

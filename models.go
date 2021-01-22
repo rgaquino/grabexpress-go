@@ -185,6 +185,11 @@ type Delivery struct {
 	Recipient       Contact         `json:"recipient"`
 }
 
+// BaseDTO ...
+type BaseDTO struct {
+	RequestID string `json:"requestID,omitempty"`
+}
+
 // CreateQuotesRequest ...
 type CreateQuotesRequest struct {
 	ServiceType *ServiceType `json:"serviceType,omitempty"`
@@ -195,6 +200,7 @@ type CreateQuotesRequest struct {
 
 // CreateQuotesResponse ...
 type CreateQuotesResponse struct {
+	BaseDTO
 	Quotes      []QuoteBase `json:"quotes,omitempty"`
 	Packages    []Package   `json:"packages,omitempty"`
 	Origin      Waypoint    `json:"origin"`
@@ -217,15 +223,22 @@ type CreateDeliveryRequest struct {
 
 // CreateDeliveryResponse ...
 type CreateDeliveryResponse struct {
+	BaseDTO
 	Delivery
 }
 
 // GetDeliveryResponse ...
 type GetDeliveryResponse struct {
+	BaseDTO
 	Delivery
 }
 
-// ErrorResponse ...
-type ErrorResponse struct {
-	Error string `json:"message"`
+// CancelDeliveryResponse ...
+type CancelDeliveryResponse struct {
+	BaseDTO
+}
+
+// SetRequestID ...
+func (b *BaseDTO) SetRequestID(id string) {
+	b.RequestID = id
 }

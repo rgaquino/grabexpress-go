@@ -38,11 +38,11 @@ func (c *Client) GetDelivery(ctx context.Context, deliveryID string) (*GetDelive
 }
 
 // CancelDelivery ...
-func (c *Client) CancelDelivery(ctx context.Context, deliveryID string) error {
+func (c *Client) CancelDelivery(ctx context.Context, deliveryID string) (*CancelDeliveryResponse, error) {
 	path := fmt.Sprintf("/v1/deliveries/%s", deliveryID)
-	resp := &GetDeliveryResponse{}
+	resp := &CancelDeliveryResponse{}
 	if err := c.delete(ctx, path, nil, resp); err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+	return resp, nil
 }
